@@ -784,7 +784,6 @@ def scrape_place_reviews(place: Place, proxy_url: Optional[str] = None, debug: b
                             pass
 
                         rows.append({
-                            "Beach ID": place.beach_id or "",
                             "Place": place.name,                # из CSV
                             "Place (UI)": place_title_ui,       # из DOM
                             "Place URL": input_url,
