@@ -43,7 +43,7 @@ except ImportError:
 
 # --- формат выходного CSV ---
 OUT_HEADER = [
-    "Beach ID","Place","Category","Categories",
+    "Place","Category","Categories",
     "Place (UI)","Place URL","Input URL","Review ID","Review URL",
     "Rating","Date","Author","Author URL","Author Photo",
     "Is Local Guide","Text","Photo URLs (list)","RawReview"
@@ -54,7 +54,7 @@ OUT_HEADER = [
 def load_places(csv_path: str) -> List[Place]:
     """
     Читает список мест из CSV.
-    Ожидаемые поля: beach_id, place_id, name, category, categories, polygon_name, place_url (последние три — опциональные).
+    Ожидаемые поля: place_id, name, category, categories, polygon_name, place_url (последние три — опциональные).
     Поле `categories` — JSON-массив строк (напр. ["Restaurant","Bar"]).
     """
     import json
@@ -83,7 +83,6 @@ def load_places(csv_path: str) -> List[Place]:
     with open(csv_path, encoding="utf-8") as f:
         rdr = csv.DictReader(f)
         for r in rdr:
-            beach_id = (r.get("beach_id") or r.get("Beach ID") or "").strip()
             place_id = (r.get("place_id") or r.get("Place ID") or "").strip()
             name = (r.get("name") or r.get("Place") or "").strip()
             polygon_name = (r.get("polygon_name") or r.get("Polygon") or "").strip() or None
@@ -96,7 +95,6 @@ def load_places(csv_path: str) -> List[Place]:
 
             if place_id and name:
                 places.append(Place(
-                    beach_id=beach_id,
                     place_id=place_id,
                     name=name,
                     polygon_name=polygon_name,
