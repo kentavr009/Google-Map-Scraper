@@ -12,7 +12,6 @@ class Place:
     - slots=True: меньше память, быстрее доступ
     - frozen=True: иммутабельно и безопаснее в многопоточности
     """
-    beach_id: str
     place_id: str
     name: str
     place_url: Optional[str] = None
@@ -34,13 +33,11 @@ class Place:
     # Унифицированный конструктор из CSV-строки (поддерживает твои алиасы колонок)
     @classmethod
     def from_csv_row(cls, r: Dict[str, Any]) -> "Place":
-        beach_id = (r.get("beach_id") or r.get("Beach ID") or "").strip()
         place_id = (r.get("place_id") or r.get("Place ID") or "").strip()
         name = (r.get("name") or r.get("Place") or "").strip()
         polygon_name = (r.get("polygon_name") or r.get("Polygon") or "").strip() or None
         place_url = (r.get("place_url") or r.get("Place URL") or "").strip() or None
         return cls(
-            beach_id=beach_id,
             place_id=place_id,
             name=name,
             place_url=place_url,
