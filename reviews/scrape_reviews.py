@@ -469,7 +469,7 @@ def _expand_review_text_in_card(card) -> None:
 def scrape_place_reviews(place: Place, proxy_url: Optional[str] = None, debug: bool = False) -> List[Dict[str, Any]]:
     """
     Возвращает список словарей:
-    'Beach ID' | 'Place' | 'Place (UI)' | 'Place URL' | 'Input URL' | 'Review ID' | 'Review URL' |
+    'Place' | 'Place (UI)' | 'Place URL' | 'Input URL' | 'Review ID' | 'Review URL' |
     'Rating' | 'Date' | 'Author' | 'Author URL' | 'Author Photo' |
     'Is Local Guide' | 'Text' | 'Photo URLs (list)' | 'RawReview'
     """
