@@ -1,1 +1,5 @@
-
+beach_id,place_id,name,category,categories,polygon_name,place_url
+101,ChIJn73o0C7_woAR1gK3yWzGk1Y,The Great Restaurant,Restaurant,"[""Restaurant"", ""Diner""]",Downtown,https://www.google.com/maps/place/The+Great+Restaurant
+102,ChIJw5oF0yL_woAR_Xw3VzGk1Y,Cozy Cafe,Cafe,"[""Cafe"", ""Coffee Shop""]",Uptown,
+103,ChIJ9r3u0S_woARq7K1gK3yWzGk1Y,Best Bar,Bar,"[""Bar"", ""Pub""]",Central,
+104,ChIJQ4B58W__woAR_A4FzGk1Y,Awesome Hotel,Hotel,"[""Hotel"", ""Accommodation""]",Seaside,https://www.google.com/maps/place/Awesome+Hotel
