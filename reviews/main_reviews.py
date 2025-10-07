@@ -1,27 +1,18 @@
-# reviews/main_reviews.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-
-"""
-main_reviews.py — Multi-threaded execution for Google Maps review scraping.
-Distribution model: worker-per-proxy.
-- Each worker (thread) receives ONE unique proxy (if proxies are provided)
-  and its share of places to process.
-- CSV writing is performed under a shared lock.
-Compatible with running as a package: `python -m reviews.main_reviews` and as a script.
-"""
 
 import argparse
 import csv
 import json
 import os
+import random
+import signal
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple
 
-# --- Support for running as both a package and a script ---
 try:
     from .model import Place
     from .scrape_reviews import (
@@ -32,9 +23,8 @@ try:
         CODE_VERSION,
     )
 except ImportError:
-    # Fallback for direct script execution
-    from model import Place  # type: ignore
-    from scrape_reviews import (  # type: ignore
+    from placeid.reviews.model import Place  # type: ignore
+    from placeid.reviews.scrape_reviews import (  # type: ignore
         scrape_place_reviews,
         MAX_RETRIES_PER_PLACE,
         REVIEW_LANGUAGE,
@@ -42,28 +32,30 @@ except ImportError:
         CODE_VERSION,
     )
 
-# --- Output CSV format ---
 OUT_HEADER = [
-    "Place", "Category", "Categories",
-    "Place (UI)", "Place URL", "Input URL", "Review ID", "Review URL",
-    "Rating", "Date", "Author", "Author URL", "Author Photo",
-    "Is Local Guide", "Text", "Photo URLs (list)", "RawReview"
+    "Beach ID","Place","Category","Categories",
+    "Place (UI)","Place URL","Input URL","Lat","Lng",
+    "Review ID","Review URL","Rating","Date","Author","Author URL","Author Photo",
+    "Is Local Guide","Text","Photo URLs (list)","RawReview"
 ]
 
+# ---- простая проверка прокси через requests (быстрее, чем поднимать браузер) ----
+def _probe_proxy(proxy_url: str, timeout: float = 8.0) -> bool:
+    try:
+        import requests
+        proxies = {"http": proxy_url, "https": proxy_url}
+        r = requests.get("https://www.google.com/generate_204", proxies=proxies, timeout=timeout)
+        return r.status_code in (204, 200)
+    except Exception:
+        return False
 
 def load_places(csv_path: str) -> List[Place]:
-    """
-    Reads a list of places from a CSV file.
-    Expected fields: place_id, name, category, categories, polygon_name, place_url (last three are optional).
-    The `categories` field is a JSON array of strings (e.g., ["Restaurant","Bar"]).
-    """
     places: List[Place] = []
 
-    def _parse_categories(val: Optional[str]) -> Optional[Tuple[str, ...]]:
+    def _parse_categories(val: Optional[str]):
         if not val:
             return None
         s = (val or "").strip()
-        # Attempt to parse as JSON
         try:
             arr = json.loads(s)
             if isinstance(arr, list):
@@ -71,7 +63,6 @@ def load_places(csv_path: str) -> List[Place]:
                 return tuple(cleaned) if cleaned else None
         except Exception:
             pass
-        # Fallback: manual parsing (if input is like: ["A","B"] or 'A, B')
         s2 = s.strip().strip("[]")
         if not s2:
             return None
@@ -82,12 +73,12 @@ def load_places(csv_path: str) -> List[Place]:
     with open(csv_path, encoding="utf-8") as f:
         rdr = csv.DictReader(f)
         for r in rdr:
+            beach_id = (r.get("Beach ID") or r.get("beach_id") or "").strip() or None
             place_id = (r.get("place_id") or r.get("Place ID") or "").strip()
             name = (r.get("name") or r.get("Place") or "").strip()
             polygon_name = (r.get("polygon_name") or r.get("Polygon") or "").strip() or None
             place_url = (r.get("place_url") or r.get("Place URL") or "").strip() or None
 
-            # New fields
             category = (r.get("category") or r.get("Category") or "").strip() or None
             categories_raw = (r.get("categories") or r.get("Categories") or "").strip() or None
             categories = _parse_categories(categories_raw)
@@ -96,25 +87,23 @@ def load_places(csv_path: str) -> List[Place]:
                 places.append(Place(
                     place_id=place_id,
                     name=name,
-                    polygon_name=polygon_name,
                     place_url=place_url,
+                    polygon_name=polygon_name,
                     category=category,
                     categories=categories,
+                    beach_id=beach_id,
                 ))
             else:
-                # Highlight malformed rows if DEBUG is enabled
                 if DEBUG_SELECTORS:
-                    print(f"⚠️ Skipping row without place_id/name: {r}")
+                    print(f"⚠️ Пропуск строки без place_id/name: {r}")
 
     return places
 
-
 def load_proxies(file_path: str) -> List[str]:
-    """Reads a list of proxies, one per line. Supports http(s)://, socks5://, socks5h://, with username/password."""
     if not file_path:
         return []
     if not os.path.exists(file_path):
-        print(f"ℹ️ Proxy file not found: {file_path} — proceeding without proxies.")
+        print(f"ℹ️ Файл прокси не найден: {file_path} — работаем без прокси.")
         return []
     proxies: List[str] = []
     with open(file_path, encoding="utf-8") as f:
@@ -125,153 +114,158 @@ def load_proxies(file_path: str) -> List[str]:
             proxies.append(s)
     return proxies
 
-
 def process_one(idx: int,
                 place: Place,
                 proxy_url: Optional[str],
                 lock: threading.Lock,
-                writer: csv.DictWriter,
-                out_path: str) -> None:
-    """
-    Processes a single place: scrapes reviews + writes results to CSV (under a Lock).
-    Reuses the existing scrape_place_reviews() function.
-    """
-    collected_rows = []
+                writer: csv.DictWriter) -> None:
+    acc = []
     last_err: Optional[Exception] = None
 
     for attempt in range(1, MAX_RETRIES_PER_PLACE + 1):
         try:
             rows = scrape_place_reviews(place, proxy_url=proxy_url, debug=True)
-            collected_rows = rows
+            acc = rows
             break
         except Exception as e:
             last_err = e
-            print(f"[{idx}] ERROR {place.name}: {e}")
-            time.sleep(0.8 * attempt)
+            print(f"[{idx}] ERROR {place.name} (try {attempt}/{MAX_RETRIES_PER_PLACE}): {e}")
+            time.sleep(min(2.5, 0.7 * attempt))
 
-    if not collected_rows:
-        print(f"[{idx}] FAIL {place.name}: No data after {MAX_RETRIES_PER_PLACE} attempts.")
+    if not acc:
+        print(f"[{idx}] FAIL {place.name}: пусто после {MAX_RETRIES_PER_PLACE} попыток.")
         return
 
-    # Write to file under a lock
     with lock:
-        for r in collected_rows:
-            row_to_write = dict(r)
+        for r in acc:
+            r2 = dict(r)
+            r2.setdefault("Beach ID", getattr(place, "beach_id", None))
+            r2.setdefault("Place", getattr(place, "name", None))
+            r2.setdefault("Category", getattr(place, "category", None))
 
-            # Add category/categories from Place object
-            row_to_write.setdefault("Category", getattr(place, "category", None))
             cats = getattr(place, "categories", None)
             if isinstance(cats, tuple):
-                row_to_write.setdefault("Categories", json.dumps(list(cats), ensure_ascii=False))
+                r2.setdefault("Categories", json.dumps(list(cats), ensure_ascii=False))
             elif isinstance(cats, list):
-                row_to_write.setdefault("Categories", json.dumps(cats, ensure_ascii=False))
+                r2.setdefault("Categories", json.dumps(cats, ensure_ascii=False))
             else:
-                row_to_write.setdefault("Categories", None)
+                r2.setdefault("Categories", None)
 
-            if isinstance(row_to_write.get("Photo URLs (list)"), list):
-                row_to_write["Photo URLs (list)"] = json.dumps(row_to_write["Photo URLs (list)"], ensure_ascii=False)
-            if row_to_write.get("RawReview") is not None:
+            if isinstance(r2.get("Photo URLs (list)"), list):
+                r2["Photo URLs (list)"] = json.dumps(r2["Photo URLs (list)"], ensure_ascii=False)
+            if r2.get("RawReview") is not None:
                 try:
-                    row_to_write["RawReview"] = json.dumps(row_to_write["RawReview"], ensure_ascii=False)
+                    r2["RawReview"] = json.dumps(r2["RawReview"], ensure_ascii=False)
                 except Exception:
-                    row_to_write["RawReview"] = None
+                    r2["RawReview"] = None
 
-            writer.writerow(row_to_write)
+            writer.writerow(r2)
 
         try:
             sys.stdout.flush()
         except Exception:
             pass
 
-    print(f"[{idx}] {place.name}: +{len(collected_rows)} reviews (total {len(collected_rows)}) (UI lang={REVIEW_LANGUAGE})")
-
+    print(f"[{idx}] {place.name}: +{len(acc)} отзыв(ов) (UI lang={REVIEW_LANGUAGE})")
 
 def run_worker(worker_id: int,
                jobs: List[Tuple[int, Place]],
                proxy_url: Optional[str],
                lock: threading.Lock,
                writer: csv.DictWriter,
-               out_path: str) -> None:
-    """
-    A worker processes its share of places using ONE dedicated proxy.
-    jobs: list of tuples (sequential index, Place object).
-    """
+               allow_no_proxy_fallback: bool = False) -> None:
     if proxy_url:
-        print(f"👤 Worker #{worker_id}: proxy = {proxy_url}")
-    else:
-        print(f"👤 Worker #{worker_id}: no proxy")
-    for idx, place in jobs:
-        process_one(idx, place, proxy_url, lock, writer, out_path)
+        ok = _probe_proxy(proxy_url)
+        if not ok:
+            print(f"👤 Worker #{worker_id}: прокси БИТЫЙ (предварительная проверка не прошла) → "
+                  f"{'перехожу без прокси' if allow_no_proxy_fallback else 'пропущу задания'}.")
+            if not allow_no_proxy_fallback:
+                return
+            proxy_url = None
 
+    # Небольшой джиттер старта, чтобы не лупить провайдера лавиной соединений
+    time.sleep(random.uniform(0.05, 0.6))
+
+    print(f"👤 Worker #{worker_id}: {'прокси = ' + proxy_url if proxy_url else 'без прокси'}")
+    for idx, place in jobs:
+        process_one(idx, place, proxy_url, lock, writer)
+        # микро-пауза, чтобы снизить шанс «ERR_TUNNEL» от провайдера
+        time.sleep(random.uniform(0.15, 0.35))
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--in", dest="inp", required=True, help="CSV with a list of places (beach_id,place_id,name,...)")
-    parser.add_argument("--out", dest="out", required=True, help="CSV file to write reviews to")
-    parser.add_argument("--threads", type=int, default=1, help="Number of threads")
-    parser.add_argument("--proxies", default="proxies.txt",
-                        help="File with proxies (one per line, http(s)/socks5(h)://user:pass@host:port)")
+    parser.add_argument("--in", dest="inp", required=True, help="CSV со списком мест (Beach ID,Place ID,Place,...)")
+    parser.add_argument("--out", dest="out", required=True, help="CSV для записи отзывов")
+    parser.add_argument("--threads", type=int, default=1, help="Количество потоков")
+    parser.add_argument("--proxies", default="proxies.txt", help="Файл с прокси (http(s)/socks5(h)://user:pass@host:port)")
+    parser.add_argument("--fallback-no-proxy", action="store_true", help="Если прокси умер, воркер продолжит без прокси")
     args = parser.parse_args()
 
     places = load_places(args.inp)
     if not places:
-        print("No input places found. Please check your CSV file.")
+        print("Нет входных мест. Проверь CSV.")
         return
 
     proxies = load_proxies(args.proxies)
     print(f"Scraper version: {CODE_VERSION}")
-    print(f"Total places: {len(places)}; threads (requested): {args.threads}; output file: {args.out}")
+    print(f"Places: {len(places)}; workers: {args.threads}; output file: {args.out}")
 
-    # Prepare output file and synchronize writing
     lock = threading.Lock()
     out_dir = os.path.dirname(os.path.abspath(args.out)) or "."
     os.makedirs(out_dir, exist_ok=True)
 
-    need_header = not os.path.exists(args.out) or os.path.getsize(args.out) == 0
     out_f = open(args.out, "a", encoding="utf-8", newline="")
+    need_header = (out_f.tell() == 0)
     writer = csv.DictWriter(out_f, fieldnames=OUT_HEADER)
     if need_header:
         writer.writeheader()
+        out_f.flush()
 
-    # Tasks with sequential numbering
+    def _sigint_handler(signum, frame):
+        print("\n⛔ SIGINT, закрываю файл…")
+        try:
+            out_f.flush()
+            out_f.close()
+        finally:
+            os._exit(1)
+    try:
+        signal.signal(signal.SIGINT, _sigint_handler)
+    except Exception:
+        pass
+
     tasks: List[Tuple[int, Place]] = list(enumerate(places, start=1))
 
-    # Determine the actual number of workers
-    wanted_threads = max(1, int(args.threads))
+    wanted = max(1, int(args.threads))
     if proxies:
-        workers = min(wanted_threads, len(proxies))
-        if wanted_threads > len(proxies):
-            print(f"⚠️ Requested threads: {wanted_threads}, but proxies available: {len(proxies)}. "
-                  f"Limiting to {workers} so each thread gets a unique proxy.")
+        workers = min(wanted, len(proxies))
+        if wanted > len(proxies):
+            print(f"⚠️ Запрошено потоков: {wanted}, но прокси: {len(proxies)}. Урежу до {workers}.")
     else:
-        workers = wanted_threads
+        workers = wanted
 
-    # Distribute tasks evenly among workers (stride distribution)
-    # If workers > len(tasks), some chunks might be empty — this is acceptable.
+    # Практический совет: для этого провайдера начните с 3–4 воркеров.
+    if workers > 4:
+        print("ℹ️ Совет: уменьшите --threads до 3–4 — многие прокси-провайдеры режут параллельность.")
+
     chunks: List[List[Tuple[int, Place]]] = [tasks[i::workers] for i in range(workers)]
-
-    print(
-        f"→ Starting {workers} worker(s). Each worker is assigned its own proxy."
-        if proxies else
-        f"→ Starting {workers} worker(s) without proxies."
-    )
+    print(f"→ Start {workers} workers{' with proxy' if proxies else ' без прокси'}.")
 
     try:
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            futures = []
+            futs = []
             for w_id in range(workers):
                 proxy_for_worker = proxies[w_id] if proxies else None
-                # Ensure w_id is used for proxy indexing, not just 0. It should be w_id % len(proxies)
-                # if there are more workers than proxies, but the logic above ensures workers <= len(proxies)
-                futs.append(ex.submit(run_worker, w_id, chunks[w_id], proxy_for_worker, lock, writer, args.out))
-            for _ in as_completed(futures):
+                futs.append(ex.submit(run_worker, w_id, chunks[w_id], proxy_for_worker, lock, writer, args.fallback_no_proxy))
+            for _ in as_completed(futs):
                 pass
     finally:
-        out_f.flush()
-        out_f.close()
+        try:
+            out_f.flush()
+            out_f.close()
+        except Exception:
+            pass
 
-    print("✅ Done.")
-
+    print("✅ Готово.")
 
 if __name__ == "__main__":
     main()
