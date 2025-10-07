@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 """
-scrape_reviews.py — сбор отзывов Google Maps для одного Place.
-- Поддержка Playwright с прокси (http/https/socks5/socks5h + логин/пароль)
-- Блокировка лишних ресурсов для скорости
-- Устойчивый поиск скролл-контейнера и карточек
-- Расширенный парсинг относительных дат (ru/en)
-Совместим с вызовом из main_reviews.py: scrape_place_reviews(place, proxy_url, debug=True)
+scrape_reviews.py — Google Maps review scraping for a single Place.
+- Playwright support with proxies (http/https/socks5/socks5h + username/password)
+- Blocking unnecessary resources for speed
+- Robust scrolling container and review card detection
+- Advanced parsing of relative dates (Russian/English)
+Compatible with calls from main_reviews.py: scrape_place_reviews(place, proxy_url, debug=True)
 """
 
-# --- импорт Place, который работает и как пакет, и как одиночный скрипт ---
+# --- Import Place, working as both a package and a standalone script ---
 try:
-    # когда запускаем модулем:  python -m reviews.main_reviews
+    # When running as a module: python -m reviews.main_reviews
     from .model import Place  # type: ignore
 except Exception:
     import os as _os, sys as _sys
@@ -50,8 +50,8 @@ def _normalize_photo(u: str) -> str:
 
 def _rel_to_iso(raw: Optional[str], now: Optional[datetime] = None) -> Optional[str]:
     """
-    Конвертирует относительные даты (ru/en) → ISO.
-    Поддержка форм:
+    Converts relative dates (Russian/English) to ISO format.
+    Supports forms like:
       - yesterday / вчера
       - N min/mins/мин/минут(ы)
       - N hour/hours/час/часа/часов
