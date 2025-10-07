@@ -1,5 +1,5 @@
 place_id,name,category,categories,polygon_name,place_url
-ChIJn73o0C7_woAR1gK3yWzGk1Y,The Great Restaurant,Restaurant,"[""Restaurant"", ""Diner""]",Downtown,https://www.google.com/maps/place/The+Great+Restaurant
-ChIJw5oF0yL_woAR_Xw3VzGk1Y,Cozy Cafe,Cafe,"[""Cafe"", ""Coffee Shop""]",Uptown,
-ChIJ9r3u0S_woARq7K1gK3yWzGk1Y,Best Bar,Bar,"[""Bar"", ""Pub""]",Central,
-ChIJQ4B58W__woAR_A4FzGk1Y,Awesome Hotel,Hotel,"[""Hotel"", ""Accommodation""]",Seaside,https://www.google.com/maps/place/Awesome+Hotel
+ChIJey16-2TdMBMRvJpcN8gHJ10,Spiaggia Libera Casarza,Restaurant,"[""Restaurant"", ""Diner""]",Downtown,https://www.google.com/maps/place/?q=place_id:ChIJey16-2TdMBMRvJpcN8gHJ10
+ChIJs5_9Oo2XMRMRLxYRXNTqbY4,Cecios Beach Club,Cafe,"[""Cafe"", ""Coffee Shop""]",Uptown,https://www.google.com/maps/place/?q=place_id:ChIJs5_9Oo2XMRMRLxYRXNTqbY4
+ChIJX7BsnaKWMRMRj4gFzunrd0I,Lido Costa Est Stabilimento Balneare,Bar,"[""Bar"", ""Pub""]",Central,https://www.google.com/maps/place/?q=place_id:ChIJX7BsnaKWMRMRj4gFzunrd0I
+ChIJh1aNkA-XMRMRb1jsuHHF3k4,Lido Scirocco,Hotel,"[""Hotel"", ""Accommodation""]",Seaside,https://www.google.com/maps/place/?q=place_id:ChIJh1aNkA-XMRMRb1jsuHHF3k4
