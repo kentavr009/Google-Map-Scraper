@@ -451,13 +451,21 @@ def scrape_place_reviews(place: Place, proxy_url: Optional[str] = None, debug: b
                     return any(b in host for b in ("doubleclick.net","googlesyndication.com","google-analytics.com","gstaticads"))
                 page.route("**/*", lambda route, request: route.abort() if _should_block(request) else route.continue_())
 
-            raw_blobs: List[Dict[str, Any]] = []
+            raw_blobs: List[Tuple[Dict[str, Any], str]] = []
+
             def on_resp(resp):
                 try:
                     u = resp.url
                     if any(k in u for k in ("listugcposts","review/listreviews","/_/LocalReviewsUi/")):
-                        try: raw_blobs.append(resp.json())
-                        except Exception: pass
+                        try:
+                            blob = resp.json()
+                            try:
+                                serialized = json.dumps(blob, ensure_ascii=False)
+                            except Exception:
+                                serialized = ""
+                            raw_blobs.append((blob, serialized))
+                        except Exception:
+                            pass
                 except Exception: pass
             page.on("response", on_resp)
 
@@ -704,11 +712,17 @@ def scrape_place_reviews(place: Place, proxy_url: Optional[str] = None, debug: b
                         try:
                             if raw_blobs:
                                 key1 = (text or "")[:32]
-                                for blob in raw_blobs:
-                                    s = json.dumps(blob, ensure_ascii=False)
-                                    if (key1 and key1 in s) or (author and author in s):
-                                        raw_match = blob; break
-                        except Exception: pass
+                                for blob, blob_serialized in raw_blobs:
+                                    if rid and rid in blob_serialized:
+                                        raw_match = blob
+                                        break
+                                    if (key1 and key1 in blob_serialized) or (
+                                        author and author in blob_serialized
+                                    ):
+                                        raw_match = blob
+                                        break
+                        except Exception:
+                            pass
 
                         rows.append({
                             "Place (UI)": place_title_ui,
