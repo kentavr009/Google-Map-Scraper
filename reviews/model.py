@@ -31,7 +31,12 @@ class Place:
     @classmethod
     def from_csv_row(cls, r: Dict[str, Any]) -> "Place":
         place_id = (r.get("place_id") or r.get("Place ID") or "").strip()
-        name = (r.get("name") or r.get("Place") or "").strip()
+        name = (
+            r.get("name")
+            or r.get("Place")
+            or r.get("Place Name")
+            or ""
+        ).strip()
         polygon_name = (r.get("polygon_name") or r.get("Polygon") or "").strip() or None
         place_url = (r.get("place_url") or r.get("Place URL") or "").strip() or None
         beach_id = (r.get("Beach ID") or r.get("beach_id") or "").strip() or None
