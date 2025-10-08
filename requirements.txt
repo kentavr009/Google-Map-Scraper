@@ -1,3 +1,4 @@
 playwright
 python-dateutil
 python-dotenv
+requests
